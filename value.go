@@ -4,12 +4,12 @@ import (
 	"time"
 )
 
-type Value[T any] struct {
+type value[T any] struct {
 	expiry int64
 	val    T
 }
 
-func (v *Value[T]) Get(revaluate bool, ttl int64) (value T, expired bool) {
+func (v *value[T]) get(revaluate bool, ttl int64) (value T, expired bool) {
 	currTime := time.Now().Unix()
 	if v.expiry <= currTime {
 		expired = true

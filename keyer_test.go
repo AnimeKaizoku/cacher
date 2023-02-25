@@ -1,8 +1,33 @@
 package cacher
 
 import (
+	"fmt"
 	"testing"
 )
+
+func ExamplePolyKeyer() {
+	// 2 is number of extra keys we'd use.
+	// total keys become 3 then
+	keyer := NewPolyKeyer("chat", 2)
+
+	fmt.Println(keyer.New("public", fmt.Sprint(100291)))
+
+	fmt.Println(keyer.New("private", fmt.Sprint(100292)))
+	// Output: chat.public.100291
+	// chat.private.100292
+}
+
+func ExamplePolyKeyer_New() {
+	// 2 is number of extra keys we'd use.
+	// total keys become 3 then
+	keyer := NewPolyKeyer("chat", 2)
+
+	fmt.Println(keyer.New("public", fmt.Sprint(100291)))
+
+	fmt.Println(keyer.New("private", fmt.Sprint(100292)))
+	// Output: chat.public.100291
+	// chat.private.100292
+}
 
 func TestPolyKeyer_New(t *testing.T) {
 	type fields struct {
@@ -40,6 +65,30 @@ func TestPolyKeyer_New(t *testing.T) {
 			}
 		})
 	}
+}
+
+func ExampleDuplet() {
+	// 2 is number of extra keys we'd use.
+	// total keys become 3 then
+	keyer := NewDuplet("chat")
+
+	fmt.Println(keyer.New(fmt.Sprint(100291)))
+
+	fmt.Println(keyer.New(fmt.Sprint(100292)))
+	// Output: chat.100291
+	// chat.100292
+}
+
+func ExampleDuplet_New() {
+	// 2 is number of extra keys we'd use.
+	// total keys become 3 then
+	keyer := NewPolyKeyer("chat", 2)
+
+	fmt.Println(keyer.New("public", fmt.Sprint(100291)))
+
+	fmt.Println(keyer.New("private", fmt.Sprint(100292)))
+	// Output: chat.public.100291
+	// chat.private.100292
 }
 
 func TestDuplet_New(t *testing.T) {

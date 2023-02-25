@@ -25,7 +25,7 @@ type Cacher[C comparable, T any] struct {
 	ttl           int64
 	mutex         *sync.RWMutex
 	status        status
-	cacheMap      map[C]*Value[T]
+	cacheMap      map[C]*value[T]
 	revaluate     bool
 	cleanInterval time.Duration
 }
@@ -73,7 +73,7 @@ type Cacher[C comparable, T any] struct {
 // revalueted on every c.Get call.
 func NewCacher[KeyT comparable, ValueT any](timeToLive time.Duration, cleanInterval time.Duration, revaluate bool) *Cacher[KeyT, ValueT] {
 	c := Cacher[KeyT, ValueT]{
-		cacheMap:      make(map[KeyT]*Value[ValueT]),
+		cacheMap:      make(map[KeyT]*value[ValueT]),
 		mutex:         new(sync.RWMutex),
 		ttl:           int64(timeToLive.Seconds()),
 		cleanInterval: cleanInterval,
@@ -85,14 +85,14 @@ func NewCacher[KeyT comparable, ValueT any](timeToLive time.Duration, cleanInter
 
 // Set is used to set a new key-value pair to the current
 // Cacher instance. It doesn't return anything.
-func (c *Cacher[C, T]) Set(key C, value T) {
-	c.setRawValue(key, c.packValue(value))
+func (c *Cacher[C, T]) Set(key C, val T) {
+	c.setRawValue(key, c.packValue(val))
 }
 
-func (c *Cacher[C, T]) setRawValue(key C, value *Value[T]) {
+func (c *Cacher[C, T]) setRawValue(key C, val *value[T]) {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
-	c.cacheMap[key] = value
+	c.cacheMap[key] = val
 }
 
 // Set is used to get value of the input key. It returns
@@ -107,7 +107,7 @@ func (c *Cacher[C, T]) Get(key C) (value T, ok bool) {
 	if !ok {
 		return
 	}
-	val, expired := rValue.Get(c.revaluate, c.ttl)
+	val, expired := rValue.get(c.revaluate, c.ttl)
 	if !expired {
 		value = val
 		return
@@ -130,7 +130,7 @@ func (c *Cacher[C, T]) GetAll() []T {
 	res := make([]T, len(c.cacheMap))
 	var i = 0
 	for _, rv := range c.cacheMap {
-		v, exp := rv.Get(false, 0)
+		v, exp := rv.get(false, 0)
 		if exp {
 			continue
 		}
@@ -163,7 +163,7 @@ func (c *Cacher[C, T]) getSome(cond SegrigatorFunc[T]) []T {
 	res := []T{}
 	for _, rv := range c.cacheMap {
 		// No need to pass actual ttl since we ain't revaluating
-		v, exp := rv.Get(false, 0)
+		v, exp := rv.get(false, 0)
 		if exp {
 			continue
 		}
@@ -176,18 +176,18 @@ func (c *Cacher[C, T]) getSome(cond SegrigatorFunc[T]) []T {
 }
 
 // It returns the value of a key in the form of Value struct.
-func (c *Cacher[C, T]) getRawValue(key C) (value *Value[T], ok bool) {
+func (c *Cacher[C, T]) getRawValue(key C) (val *value[T], ok bool) {
 	c.mutex.RLock()
 	defer c.mutex.RUnlock()
-	value, ok = c.cacheMap[key]
+	val, ok = c.cacheMap[key]
 	return
 }
 
 // It packs the value to a a struct with expiry date.
-func (c *Cacher[C, T]) packValue(value T) *Value[T] {
-	return &Value[T]{
+func (c *Cacher[C, T]) packValue(val T) *value[T] {
+	return &value[T]{
 		expiry: time.Now().Unix() + c.ttl,
-		val:    value,
+		val:    val,
 	}
 }
 
@@ -230,5 +230,5 @@ func (c *Cacher[C, T]) Reset() {
 	c.status = cacherReset
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
-	c.cacheMap = make(map[C]*Value[T])
+	c.cacheMap = make(map[C]*value[T])
 }
