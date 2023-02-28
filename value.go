@@ -10,6 +10,9 @@ type value[T any] struct {
 }
 
 func (v *value[T]) get(revaluate bool, ttl int64) (value T, expired bool) {
+	if v.expiry == 0 {
+		return v.val, false
+	}
 	currTime := time.Now().Unix()
 	if v.expiry <= currTime {
 		expired = true

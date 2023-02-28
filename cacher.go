@@ -30,6 +30,38 @@ type Cacher[C comparable, T any] struct {
 	cleanInterval time.Duration
 }
 
+// This struct contains the optional arguments which can be filled
+// while creating a new Cacher instance.
+//
+// Parameters:
+//
+// TimeToLive (type time.Duration):
+// It allows us to expire a key after a specific time period.
+// Eg: If it is set to 30 seconds, then each key of current
+// Cacher will be expired after 30 seconds of their addition.
+//
+// CleanInterval (type time.Duration):
+// It is the time of interval between two cleaner windows.
+// A cleaner window is that time frame when all the expired
+// keys will be deleted from our cache mapping.
+// Note: It TTL is set to a finite value and no value is passed
+// to CleanInterval, it'll use a default time interval of 1 day
+// for clean window.
+// Eg: If CleanInterval is set to 1 hour, then cleaner
+// window will be run after every 1 hour, and the expired keys
+// which are present in our cache map will be deleted.
+//
+// Revaluate (type bool):
+// It allows us to keep keys cached as per their usage frequency.
+// Working: Whenever the keys will be retrieved via (Cacher.Get)
+// method, its expiry will be renewed and this will allow us to
+// keep frequently used keys in the map without expiration.
+type NewCacherOpts struct {
+	TimeToLive    time.Duration
+	CleanInterval time.Duration
+	Revaluate     bool
+}
+
 // NewCacher is a generic function which creates a new Cacher instance.
 //
 // Generic parameters (for current Cacher instance):
@@ -46,40 +78,34 @@ type Cacher[C comparable, T any] struct {
 //
 // Input parameters:
 //
-// timeToLive (type time.Duration):
-// It allows us to expire a key after a specific time period.
-// Eg: If it is set to 30 seconds, then each key of current
-// Cacher will be expired after 30 seconds of their addition.
-//
-// cleanInterval (type time.Duration):
-// It is the time of interval between two cleaner windows.
-// A cleaner window is that time frame when all the expired
-// keys will be deleted from our cache mapping.
-// Eg: If cleanInterval is set to 1 hour, then cleaner
-// window will be run after every 1 hour, and the expired keys
-// which are present in our cache map will be deleted.
-//
-// revaluate (type bool):
-// It allows us to keep keys cached as per their usage frequency.
-// Working: Whenever the keys will be retrieved via (Cacher.Get)
-// method, its expiry will be renewed and this will allow us to
-// keep frequently used keys in the map without expiration.
+// opts (type *NewCacherOpts):
+// It contains optional parameters which you can use while creating
+// a new Cacher instance.
 //
 // General Example:
-// c := cacher.NewCacher[int, string](10*time.Minute, time.Hour, true)
+// c := cacher.NewCacher[int, string](&cacher.NewCacherOpts{10*time.Minute, time.Hour, true})
 // will create a new Cacher instance which will expire keys after 10
 // minutes of their addition to the system, all the expired keys will
 // be deleted from cache once in an hour. Keys will have their expiry
 // revalueted on every c.Get call.
-func NewCacher[KeyT comparable, ValueT any](timeToLive time.Duration, cleanInterval time.Duration, revaluate bool) *Cacher[KeyT, ValueT] {
+func NewCacher[KeyT comparable, ValueT any](opts *NewCacherOpts) *Cacher[KeyT, ValueT] {
+	if opts == nil {
+		opts = new(NewCacherOpts)
+	}
+	ttl := int64(opts.TimeToLive.Seconds())
 	c := Cacher[KeyT, ValueT]{
 		cacheMap:      make(map[KeyT]*value[ValueT]),
 		mutex:         new(sync.RWMutex),
-		ttl:           int64(timeToLive.Seconds()),
-		cleanInterval: cleanInterval,
-		revaluate:     revaluate,
+		ttl:           ttl,
+		cleanInterval: opts.CleanInterval,
+		revaluate:     opts.Revaluate,
 	}
-	go c.cleaner()
+	if ttl != 0 {
+		if c.cleanInterval == 0 {
+			c.cleanInterval = time.Hour * 24
+		}
+		go c.cleaner()
+	}
 	return &c
 }
 
@@ -185,10 +211,13 @@ func (c *Cacher[C, T]) getRawValue(key C) (val *value[T], ok bool) {
 
 // It packs the value to a a struct with expiry date.
 func (c *Cacher[C, T]) packValue(val T) *value[T] {
-	return &value[T]{
-		expiry: time.Now().Unix() + c.ttl,
-		val:    val,
+	v := value[T]{
+		val: val,
 	}
+	if c.ttl != 0 {
+		v.expiry = time.Now().Unix() + c.ttl
+	}
+	return &v
 }
 
 // Delete is used to delete the input key from current
@@ -231,4 +260,10 @@ func (c *Cacher[C, T]) Reset() {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 	c.cacheMap = make(map[C]*value[T])
+}
+
+// NumKeys counts the number of keys present in the
+// current Cacher instance and returns that count.
+func (c *Cacher[C, T]) NumKeys() int {
+	return len(c.cacheMap)
 }

@@ -9,6 +9,7 @@ import (
 func (c *Cacher[C, T]) cleaner() {
 	for {
 		currTime := time.Now().Unix()
+		c.mutex.Lock()
 		for key, val := range c.cacheMap {
 			// Skip the current clean window if cacher is reset or deleted.
 			if c.status == cacherReset || c.status == cacherDeleted {
@@ -16,11 +17,10 @@ func (c *Cacher[C, T]) cleaner() {
 				break
 			}
 			if val.expiry <= currTime {
-				c.mutex.Lock()
 				delete(c.cacheMap, key)
-				c.mutex.Unlock()
 			}
 		}
+		c.mutex.Unlock()
 		// cleanup expired keys every c.cleanInterval duration
 		time.Sleep(c.cleanInterval)
 	}
