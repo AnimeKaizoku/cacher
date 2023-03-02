@@ -153,8 +153,10 @@ func (c *Cacher[C, T]) Get(key C) (value T, ok bool) {
 // even if the revaluation mode is turned on for the
 // current Cacher instance.
 func (c *Cacher[C, T]) GetAll() []T {
-	res := make([]T, len(c.cacheMap))
+	res := make([]T, c.NumKeys())
 	var i = 0
+	c.mutex.RLock()
+	defer c.mutex.RUnlock()
 	for _, rv := range c.cacheMap {
 		v, exp := rv.get(false, 0)
 		if exp {
@@ -187,6 +189,8 @@ func (c *Cacher[C, T]) getSome(cond SegrigatorFunc[T]) []T {
 	// we can't determine length yet due to segrigations by the
 	// cond function.
 	res := []T{}
+	c.mutex.RLock()
+	defer c.mutex.RUnlock()
 	for _, rv := range c.cacheMap {
 		// No need to pass actual ttl since we ain't revaluating
 		v, exp := rv.get(false, 0)
@@ -239,15 +243,13 @@ func (c *Cacher[C, T]) DeleteSome(cond SegrigatorFunc[T]) {
 }
 
 func (c *Cacher[C, T]) deleteSome(cond SegrigatorFunc[T]) {
-	// we can't determine length yet due to segrigations by the
-	// cond function.
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
 	for k, v := range c.cacheMap {
 		if !cond(v.val) {
 			continue
 		}
-		c.mutex.Lock()
 		delete(c.cacheMap, k)
-		c.mutex.Unlock()
 	}
 }
 
@@ -265,5 +267,7 @@ func (c *Cacher[C, T]) Reset() {
 // NumKeys counts the number of keys present in the
 // current Cacher instance and returns that count.
 func (c *Cacher[C, T]) NumKeys() int {
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
 	return len(c.cacheMap)
 }
