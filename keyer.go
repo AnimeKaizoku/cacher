@@ -41,7 +41,7 @@ func NewPolyKeyer(primaryKey string, numExtraKeys int) *PolyKeyer {
 // in the same order as they were passed as an argument.
 func (k *PolyKeyer) New(extraKeys ...string) string {
 	if len(extraKeys) == 0 || (len(extraKeys) != k.extraKeys) {
-		panic(fmt.Sprintf("cacher.PolyKeyer.New: invalid amound of extra keys to PolyKeyer[%s]", k.primaryKey))
+		panic(fmt.Sprintf("cacher.PolyKeyer.New: invalid amount of extra keys to PolyKeyer[%s]", k.primaryKey))
 	}
 	n := len(extraKeys) + len(k.primaryKey)
 	for i := 0; i < len(extraKeys); i++ {
