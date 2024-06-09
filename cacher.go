@@ -267,7 +267,7 @@ func (c *Cacher[C, T]) Reset() {
 // NumKeys counts the number of keys present in the
 // current Cacher instance and returns that count.
 func (c *Cacher[C, T]) NumKeys() int {
-	c.mutex.Lock()
-	defer c.mutex.Unlock()
+	c.mutex.RLock()
+	defer c.mutex.RUnlock()
 	return len(c.cacheMap)
 }
