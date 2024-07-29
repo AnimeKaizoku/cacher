@@ -112,7 +112,17 @@ func NewCacher[KeyT comparable, ValueT any](opts *NewCacherOpts) *Cacher[KeyT, V
 // Set is used to set a new key-value pair to the current
 // Cacher instance. It doesn't return anything.
 func (c *Cacher[C, T]) Set(key C, val T) {
-	c.setRawValue(key, c.packValue(val))
+	c.setRawValue(key, c.packValue(val, nil))
+}
+
+// SetWithTTL is used to set a new key-value pair to the current
+// Cacher instance with a specific TTL. It doesn't return anything.
+// It will expire the key after the input TTL, and TTL specified in
+// this function will override the default TTL of current Cacher instance
+// for this pair specifically.
+func (c *Cacher[C, T]) SetWithTTL(key C, val T, ttl time.Duration) {
+	var _ttl = int64(ttl.Seconds())
+	c.setRawValue(key, c.packValue(val, &_ttl))
 }
 
 func (c *Cacher[C, T]) setRawValue(key C, val *value[T]) {
@@ -214,12 +224,19 @@ func (c *Cacher[C, T]) getRawValue(key C) (val *value[T], ok bool) {
 }
 
 // It packs the value to a a struct with expiry date.
-func (c *Cacher[C, T]) packValue(val T) *value[T] {
+func (c *Cacher[C, T]) packValue(val T, ttl *int64) *value[T] {
 	v := value[T]{
 		val: val,
 	}
-	if c.ttl != 0 {
-		v.expiry = time.Now().Unix() + c.ttl
+	if ttl != nil {
+		var _ttl_val = *ttl
+		if _ttl_val != 0 {
+			v.expiry = time.Now().Unix() + _ttl_val
+		}
+	} else {
+		if c.ttl != 0 {
+			v.expiry = time.Now().Unix() + c.ttl
+		}
 	}
 	return &v
 }
