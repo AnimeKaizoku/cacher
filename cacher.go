@@ -163,10 +163,10 @@ func (c *Cacher[C, T]) Get(key C) (value T, ok bool) {
 // even if the revaluation mode is turned on for the
 // current Cacher instance.
 func (c *Cacher[C, T]) GetAll() []T {
-	res := make([]T, c.NumKeys())
-	var i = 0
 	c.mutex.RLock()
 	defer c.mutex.RUnlock()
+	res := make([]T, len(c.cacheMap))
+	var i = 0
 	for _, rv := range c.cacheMap {
 		v, exp := rv.get(false, 0)
 		if exp {
@@ -284,7 +284,7 @@ func (c *Cacher[C, T]) Reset() {
 // NumKeys counts the number of keys present in the
 // current Cacher instance and returns that count.
 func (c *Cacher[C, T]) NumKeys() int {
-	c.mutex.Lock()
-	defer c.mutex.Unlock()
+	c.mutex.RLock()
+	defer c.mutex.RUnlock()
 	return len(c.cacheMap)
 }
