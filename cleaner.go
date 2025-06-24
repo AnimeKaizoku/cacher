@@ -1,22 +1,25 @@
 package cacher
 
 import (
+	"sync"
 	"time"
 )
 
-type Cleanable interface {
+type cleanable interface {
 	cleanExpired()
 	getCleanInterval() time.Duration
 }
 
-type Cleaner struct {
-	cachers       []Cleanable
+type cleaner struct {
+	mu            sync.RWMutex
+	cachers       []cleanable
 	cleanInterval time.Duration
+	once          sync.Once
 }
 
-func NewCleaner() *Cleaner {
-	return &Cleaner{
-		cachers: make([]Cleanable, 0),
+func newCleaner() *cleaner {
+	return &cleaner{
+		cachers: make([]cleanable, 0),
 	}
 }
 
@@ -28,7 +31,7 @@ func gcd(a, b time.Duration) time.Duration {
 	return a
 }
 
-func (cl *Cleaner) calculateIntervalGCD() {
+func (cl *cleaner) calculateIntervalGCD() {
 	if len(cl.cachers) == 0 {
 		cl.cleanInterval = 0
 		return
@@ -40,18 +43,28 @@ func (cl *Cleaner) calculateIntervalGCD() {
 	cl.cleanInterval = interval
 }
 
-func (cl *Cleaner) Register(c Cleanable) {
+func (cl *cleaner) Register(c cleanable) {
+	cl.mu.Lock()
+	defer cl.mu.Unlock()
+
 	cl.cachers = append(cl.cachers, c)
 	cl.calculateIntervalGCD()
+	cl.once.Do(func() {
+		go cl.Run()
+	})
 }
 
-func (cl *Cleaner) Run() {
+func (cl *cleaner) Run() {
 	go func() {
 		for {
-			for _, c := range cl.cachers {
+			cl.mu.RLock()
+			cachers := append([]cleanable(nil), cl.cachers...)
+			interval := cl.cleanInterval
+			cl.mu.RUnlock()
+			for _, c := range cachers {
 				c.cleanExpired()
 			}
-			time.Sleep(cl.cleanInterval)
+			time.Sleep(interval)
 		}
 	}()
 }

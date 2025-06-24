@@ -28,7 +28,7 @@ type Cacher[C comparable, T any] struct {
 	cacheMap      map[C]*value[T]
 	revaluate     bool
 	cleanInterval time.Duration
-	startCleaner  bool
+	cleanerMode   CleaningMode
 }
 
 // This struct contains the optional arguments which can be filled
@@ -61,8 +61,10 @@ type NewCacherOpts struct {
 	TimeToLive    time.Duration
 	CleanInterval time.Duration
 	Revaluate     bool
-	StartCleaner  bool
+	CleanerMode   CleaningMode
 }
+
+var centralCleaner *cleaner = newCleaner()
 
 // NewCacher is a generic function which creates a new Cacher instance.
 //
@@ -101,13 +103,15 @@ func NewCacher[KeyT comparable, ValueT any](opts *NewCacherOpts) *Cacher[KeyT, V
 		ttl:           ttl,
 		cleanInterval: opts.CleanInterval,
 		revaluate:     opts.Revaluate,
-		startCleaner:  opts.StartCleaner,
+		cleanerMode:   opts.CleanerMode,
 	}
 	if ttl != 0 {
 		if c.cleanInterval == 0 {
 			c.cleanInterval = time.Hour * 24
 		}
-		if c.startCleaner {
+		if c.cleanerMode == CleaningCentral {
+			centralCleaner.Register(&c)
+		} else {
 			go c.cleaner()
 		}
 	}
