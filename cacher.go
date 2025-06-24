@@ -28,6 +28,7 @@ type Cacher[C comparable, T any] struct {
 	cacheMap      map[C]*value[T]
 	revaluate     bool
 	cleanInterval time.Duration
+	startCleaner  bool
 }
 
 // This struct contains the optional arguments which can be filled
@@ -60,6 +61,7 @@ type NewCacherOpts struct {
 	TimeToLive    time.Duration
 	CleanInterval time.Duration
 	Revaluate     bool
+	StartCleaner  bool
 }
 
 // NewCacher is a generic function which creates a new Cacher instance.
@@ -99,12 +101,15 @@ func NewCacher[KeyT comparable, ValueT any](opts *NewCacherOpts) *Cacher[KeyT, V
 		ttl:           ttl,
 		cleanInterval: opts.CleanInterval,
 		revaluate:     opts.Revaluate,
+		startCleaner:  opts.StartCleaner,
 	}
 	if ttl != 0 {
 		if c.cleanInterval == 0 {
 			c.cleanInterval = time.Hour * 24
 		}
-		go c.cleaner()
+		if c.startCleaner {
+			go c.cleaner()
+		}
 	}
 	return &c
 }
@@ -287,4 +292,24 @@ func (c *Cacher[C, T]) NumKeys() int {
 	c.mutex.RLock()
 	defer c.mutex.RUnlock()
 	return len(c.cacheMap)
+}
+
+func (c *Cacher[C, T]) getCleanInterval() time.Duration {
+	return c.cleanInterval
+}
+
+func (c *Cacher[C, T]) cleanExpired() {
+	currTime := time.Now().Unix()
+	c.mutex.Lock()
+	for key, val := range c.cacheMap {
+		// Skip the current clean window if cacher is reset or deleted.
+		if c.status == cacherReset || c.status == cacherDeleted {
+			c.status = noop
+			break
+		}
+		if val.expiry <= currTime {
+			delete(c.cacheMap, key)
+		}
+	}
+	c.mutex.Unlock()
 }
