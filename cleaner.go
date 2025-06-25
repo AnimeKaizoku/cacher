@@ -49,9 +49,7 @@ func (cl *cleaner) Register(c cleanable) {
 
 	cl.cachers = append(cl.cachers, c)
 	cl.calculateIntervalGCD()
-	cl.once.Do(func() {
-		go cl.Run()
-	})
+	cl.once.Do(cl.Run)
 }
 
 func (cl *cleaner) Run() {
