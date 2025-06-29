@@ -8,3 +8,11 @@ const (
 	cacherReset
 	cacherDeleted
 )
+
+type CleaningMode int
+
+const (
+	CleaningNone CleaningMode = iota
+	CleaningCentral
+	CleaningLocal
+)
