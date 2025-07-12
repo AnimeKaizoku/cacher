@@ -22,13 +22,12 @@ import (
 // method, its expiry will be renewed and this will allow us to
 // keep frequently used keys in the map without expiration.
 type Cacher[C comparable, T any] struct {
-	ttl           int64
-	mutex         *sync.RWMutex
-	status        status
-	cacheMap      map[C]*value[T]
-	revaluate     bool
-	cleanInterval time.Duration
-	cleanerMode   CleaningMode
+	mutex          *sync.RWMutex
+	status         status
+	cacheMap       map[C]*value[T]
+	cleanInterval  time.Duration
+	cleanerMode    CleaningMode
+	evictionPolicy EvictionPolicy
 }
 
 // This struct contains the optional arguments which can be filled
@@ -58,10 +57,9 @@ type Cacher[C comparable, T any] struct {
 // method, its expiry will be renewed and this will allow us to
 // keep frequently used keys in the map without expiration.
 type NewCacherOpts struct {
-	TimeToLive    time.Duration
-	CleanInterval time.Duration
-	Revaluate     bool
-	CleanerMode   CleaningMode
+	CleanInterval  time.Duration
+	CleanerMode    CleaningMode
+	EvictionPolicy EvictionPolicy
 }
 
 var centralCleaner *cleaner = newCleaner()
@@ -96,16 +94,14 @@ func NewCacher[KeyT comparable, ValueT any](opts *NewCacherOpts) *Cacher[KeyT, V
 	if opts == nil {
 		opts = new(NewCacherOpts)
 	}
-	ttl := int64(opts.TimeToLive.Seconds())
+	// ttl := int64(opts.TimeToLive.Seconds())
 	c := Cacher[KeyT, ValueT]{
 		cacheMap:      make(map[KeyT]*value[ValueT]),
 		mutex:         new(sync.RWMutex),
-		ttl:           ttl,
 		cleanInterval: opts.CleanInterval,
-		revaluate:     opts.Revaluate,
 		cleanerMode:   opts.CleanerMode,
 	}
-	if ttl != 0 {
+	if opts.EvictionPolicy != nil {
 		if c.cleanInterval == 0 {
 			c.cleanInterval = time.Hour * 24
 		}
@@ -152,7 +148,7 @@ func (c *Cacher[C, T]) Get(key C) (value T, ok bool) {
 	if !ok {
 		return
 	}
-	val, expired := rValue.get(c.revaluate, c.ttl)
+	val, expired := rValue.get()
 	if !expired {
 		value = val
 		return
@@ -177,10 +173,7 @@ func (c *Cacher[C, T]) GetAll() []T {
 	res := make([]T, len(c.cacheMap))
 	var i = 0
 	for _, rv := range c.cacheMap {
-		v, exp := rv.get(false, 0)
-		if exp {
-			continue
-		}
+		v := rv.getWithoutExpiry()
 		res[i] = v
 		i++
 	}
@@ -212,10 +205,7 @@ func (c *Cacher[C, T]) getSome(cond SegrigatorFunc[T]) []T {
 	defer c.mutex.RUnlock()
 	for _, rv := range c.cacheMap {
 		// No need to pass actual ttl since we ain't revaluating
-		v, exp := rv.get(false, 0)
-		if exp {
-			continue
-		}
+		v := rv.getWithoutExpiry()
 		if !cond(v) {
 			continue
 		}
@@ -234,18 +224,23 @@ func (c *Cacher[C, T]) getRawValue(key C) (val *value[T], ok bool) {
 
 // It packs the value to a a struct with expiry date.
 func (c *Cacher[C, T]) packValue(val T, ttl *int64) *value[T] {
-	v := value[T]{
-		val: val,
+	ev := c.evictionPolicy.getEvictableValue()
+	if dv, ok := ev.(*defaultEviction); ok {
+		if ttl != nil {
+			var _ttl_val = *ttl
+			if _ttl_val != 0 {
+				dv.expiry = time.Now().Unix() + _ttl_val
+			}
+		} else {
+			if dv.ttl != 0 {
+				dv.expiry = time.Now().Unix() + dv.ttl
+			}
+		}
+		ev = dv
 	}
-	if ttl != nil {
-		var _ttl_val = *ttl
-		if _ttl_val != 0 {
-			v.expiry = time.Now().Unix() + _ttl_val
-		}
-	} else {
-		if c.ttl != 0 {
-			v.expiry = time.Now().Unix() + c.ttl
-		}
+	v := value[T]{
+		val:            val,
+		evictibleValue: ev,
 	}
 	return &v
 }
@@ -303,7 +298,6 @@ func (c *Cacher[C, T]) getCleanInterval() time.Duration {
 }
 
 func (c *Cacher[C, T]) cleanExpired() {
-	currTime := time.Now().Unix()
 	c.mutex.Lock()
 	for key, val := range c.cacheMap {
 		// Skip the current clean window if cacher is reset or deleted.
@@ -311,7 +305,7 @@ func (c *Cacher[C, T]) cleanExpired() {
 			c.status = noop
 			break
 		}
-		if val.expiry <= currTime {
+		if val.isExpired(true) {
 			delete(c.cacheMap, key)
 		}
 	}
