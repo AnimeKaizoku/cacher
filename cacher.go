@@ -40,13 +40,11 @@ type Cacher[C comparable, T any] struct {
 // Eg: If it is set to 30 seconds, then each key of current
 // Cacher will be expired after 30 seconds of their addition.
 //
-// CleanInterval (type time.Duration):
-// It is the time of interval between two cleaner windows.
-// A cleaner window is that time frame when all the expired
-// keys will be deleted from our cache mapping.
-// Note: It TTL is set to a finite value and no value is passed
-// to CleanInterval, it'll use a default time interval of 1 day
-// for clean window.
+// CleanInterval (time.Duration):
+// The interval between two cleaner runs.
+// Each cleaner run scans the cache and deletes expired keys.
+// Note: If TimeToLive is finite and CleanInterval is not set,
+// CleanInterval defaults to half of TimeToLive.
 // Eg: If CleanInterval is set to 1 hour, then cleaner
 // window will be run after every 1 hour, and the expired keys
 // which are present in our cache map will be deleted.
@@ -103,7 +101,7 @@ func NewCacher[KeyT comparable, ValueT any](opts *NewCacherOpts) *Cacher[KeyT, V
 	}
 	if opts.EvictionPolicy != nil {
 		if c.cleanInterval == 0 {
-			c.cleanInterval = time.Hour * 24
+			c.cleanInterval = time.Duration(ttl/2) * time.Second
 		}
 		if c.cleanerMode == CleaningCentral {
 			centralCleaner.Register(&c)
