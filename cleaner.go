@@ -70,9 +70,9 @@ func (cl *cleaner) Run() {
 // A function used by current Cacher instance to clean
 // expired keys on regular basis.
 func (c *Cacher[C, T]) cleaner() {
-	for {
+	ticker := time.NewTicker(c.cleanInterval)
+	defer ticker.Stop()
+	for range ticker.C {
 		c.cleanExpired()
-		// cleanup expired keys every c.cleanInterval duration
-		time.Sleep(c.cleanInterval)
 	}
 }
