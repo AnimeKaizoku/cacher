@@ -30,34 +30,47 @@ type Cacher[C comparable, T any] struct {
 	evictionPolicy EvictionPolicy
 }
 
-// This struct contains the optional arguments which can be filled
-// while creating a new Cacher instance.
+// NewCacherOpts defines the optional configuration parameters
+// used when creating a new Cacher instance.
 //
-// Parameters:
+// Fields:
 //
-// TimeToLive (type time.Duration):
-// It allows us to expire a key after a specific time period.
-// Eg: If it is set to 30 seconds, then each key of current
-// Cacher will be expired after 30 seconds of their addition.
+// TimeToLive (time.Duration):
+// Specifies how long a cache entry remains valid after insertion.
+// Once this duration elapses, the entry is considered expired.
+// Example: If set to 30 seconds, each key will expire 30 seconds
+// after it is added to the cache.
 //
 // CleanInterval (time.Duration):
-// The interval between two cleaner runs.
+// Defines how often the cleaner runs to remove expired entries.
 // Each cleaner run scans the cache and deletes expired keys.
-// Note: If TimeToLive is finite and CleanInterval is not set,
-// CleanInterval defaults to half of TimeToLive.
-// Eg: If CleanInterval is set to 1 hour, then cleaner
-// window will be run after every 1 hour, and the expired keys
-// which are present in our cache map will be deleted.
+// Note: If TimeToLive is set and CleanInterval is not provided,
+// it defaults to half of TimeToLive.
+// Example: If set to 1 hour, the cleaner runs every hour.
 //
-// Revaluate (type bool):
-// It allows us to keep keys cached as per their usage frequency.
-// Working: Whenever the keys will be retrieved via (Cacher.Get)
-// method, its expiry will be renewed and this will allow us to
-// keep frequently used keys in the map without expiration.
+// CleanerMode (CleaningMode):
+// Determines how cache cleanup is performed.
+// Supported values:
+//  1. CleaningNone    – Disables automatic cleanup.
+//  2. CleaningCentral – Uses a shared, centralized cleaner for
+//     all cache instances in the process.
+//  3. CleaningLocal   – Each cache instance runs its own cleaner.
+//
+// Choose CleaningLocal if you want immediate, instance-specific
+// cleanup without waiting for a central scheduler.
+// Choose CleaningCentral if you want to avoid spawning an extra
+// goroutine per cache instance.
+//
+// Revaluate (bool):
+// Enables expiration renewal on access.
+// When enabled, each successful call to Cacher.Get renews the
+// key’s expiry time, allowing frequently accessed entries to
+// remain cached longer.
 type NewCacherOpts struct {
-	CleanInterval  time.Duration
-	CleanerMode    CleaningMode
-	EvictionPolicy EvictionPolicy
+	TimeToLive    time.Duration
+	CleanInterval time.Duration
+	CleanerMode   CleaningMode
+	Revaluate     bool
 }
 
 var centralCleaner *cleaner = newCleaner()
@@ -92,16 +105,18 @@ func NewCacher[KeyT comparable, ValueT any](opts *NewCacherOpts) *Cacher[KeyT, V
 	if opts == nil {
 		opts = new(NewCacherOpts)
 	}
-	// ttl := int64(opts.TimeToLive.Seconds())
+	ttl := int64(opts.TimeToLive.Seconds())
+	eviction := DefaultEvictionPolicy(opts.Revaluate, ttl)
 	c := Cacher[KeyT, ValueT]{
-		cacheMap:      make(map[KeyT]*value[ValueT]),
-		mutex:         new(sync.RWMutex),
-		cleanInterval: opts.CleanInterval,
-		cleanerMode:   opts.CleanerMode,
+		cacheMap:       make(map[KeyT]*value[ValueT]),
+		mutex:          new(sync.RWMutex),
+		cleanInterval:  opts.CleanInterval,
+		cleanerMode:    opts.CleanerMode,
+		evictionPolicy: eviction,
 	}
-	if opts.EvictionPolicy != nil {
+	if eviction != nil {
 		if c.cleanInterval == 0 {
-			c.cleanInterval = time.Duration(ttl/2) * time.Second
+			c.cleanInterval = 1 * time.Hour
 		}
 		if c.cleanerMode == CleaningCentral {
 			centralCleaner.Register(&c)
@@ -134,7 +149,7 @@ func (c *Cacher[C, T]) setRawValue(key C, val *value[T]) {
 	c.cacheMap[key] = val
 }
 
-// Set is used to get value of the input key. It returns
+// Get is used to get value of the input key. It returns
 // value of input key with true while returns empty value
 // with false if key is not found or has expired already
 //
@@ -272,7 +287,7 @@ func (c *Cacher[C, T]) deleteSome(cond SegrigatorFunc[T]) {
 	}
 }
 
-// The Reset function deletes the current cache map
+// Reset function deletes the current cache map
 // and reallocates an empty one in place of it.
 // Use it if you want to delete all keys at once.
 // It doesn't return anything.
