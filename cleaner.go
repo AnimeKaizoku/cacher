@@ -58,6 +58,9 @@ func (cl *cleaner) Run() {
 			cl.mu.RLock()
 			cachers := append([]cleanable(nil), cl.cachers...)
 			interval := cl.cleanInterval
+			if interval <= 0 {
+				interval = time.Duration(time.Second)
+			}
 			cl.mu.RUnlock()
 			for _, c := range cachers {
 				c.cleanExpired()
