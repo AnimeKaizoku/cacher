@@ -130,7 +130,7 @@ func NewCacher[KeyT comparable, ValueT any](opts *NewCacherOpts) *Cacher[KeyT, V
 // Set is used to set a new key-value pair to the current
 // Cacher instance. It doesn't return anything.
 func (c *Cacher[C, T]) Set(key C, val T) {
-	c.setRawValue(key, c.packValue(val, nil))
+	c.setRawValue(key, c.packValue(val, nil, false))
 }
 
 // SetWithTTL is used to set a new key-value pair to the current
@@ -140,7 +140,15 @@ func (c *Cacher[C, T]) Set(key C, val T) {
 // for this pair specifically.
 func (c *Cacher[C, T]) SetWithTTL(key C, val T, ttl time.Duration) {
 	var _ttl = int64(ttl.Seconds())
-	c.setRawValue(key, c.packValue(val, &_ttl))
+	c.setRawValue(key, c.packValue(val, &_ttl, false))
+}
+
+// SetPermanent is used to set a new key-value pair permanently to the
+// current Cacher instance. This key will not expire and will stay in the
+// cacher instance as long as the program is running. This overrides the
+// default TTL of the cacher instance for this specific pair.
+func (c *Cacher[C, T]) SetPermanent(key C, val T) {
+	c.setRawValue(key, c.packValue(val, nil, true))
 }
 
 func (c *Cacher[C, T]) setRawValue(key C, val *value[T]) {
@@ -236,7 +244,7 @@ func (c *Cacher[C, T]) getRawValue(key C) (val *value[T], ok bool) {
 }
 
 // It packs the value to a a struct with expiry date.
-func (c *Cacher[C, T]) packValue(val T, ttl *int64) *value[T] {
+func (c *Cacher[C, T]) packValue(val T, ttl *int64, permanent bool) *value[T] {
 	ev := c.evictionPolicy.getEvictableValue()
 	if dv, ok := ev.(*defaultEviction); ok {
 		if ttl != nil {
@@ -248,6 +256,9 @@ func (c *Cacher[C, T]) packValue(val T, ttl *int64) *value[T] {
 			if dv.ttl != 0 {
 				dv.expiry = time.Now().Unix() + dv.ttl
 			}
+		}
+		if permanent {
+			dv.expiry = 0
 		}
 		ev = dv
 	}
